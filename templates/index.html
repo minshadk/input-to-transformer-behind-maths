@@ -1,0 +1,1209 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AttentionLens — Transformer Self-Attention Visualizer</title>
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+                        mono: ['Fira Code', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace']
+                    },
+                    colors: {
+                        brand: {
+                            50: '#eef2ff',
+                            100: '#e0e7ff',
+                            400: '#818cf8',
+                            500: '#6366f1',
+                            600: '#4f46e5',
+                            700: '#4338ca',
+                            900: '#1e1b4b'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- KaTeX for crisp LaTeX formulas -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js" onload="renderMathWhenReady()"></script>
+
+    <style>
+        /* Base styling & glowing ambient background */
+        body {
+            background-color: #090d16;
+            color: #e2e8f0;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-image: 
+                radial-gradient(at 15% 15%, rgba(99, 102, 241, 0.15) 0px, transparent 45%),
+                radial-gradient(at 85% 85%, rgba(168, 85, 247, 0.12) 0px, transparent 45%),
+                radial-gradient(at 50% 50%, rgba(14, 165, 233, 0.06) 0px, transparent 60%);
+            background-attachment: fixed;
+            min-height: 100vh;
+        }
+
+        /* Glassmorphism panels */
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.78);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+        }
+
+        .glass-panel-subtle {
+            background: rgba(30, 41, 59, 0.55);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        /* Tables */
+        .matrix-table {
+            border-collapse: separate;
+            border-spacing: 0;
+            width: 100%;
+            font-family: 'Fira Code', monospace;
+            font-size: 0.85rem;
+        }
+
+        .matrix-table th {
+            background: rgba(30, 41, 59, 0.85);
+            color: #94a3b8;
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.72rem;
+            letter-spacing: 0.05em;
+            padding: 10px 14px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .matrix-table td {
+            padding: 8px 14px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+            text-align: right;
+            transition: all 0.15s ease;
+        }
+
+        .matrix-table tr:hover td {
+            background: rgba(99, 102, 241, 0.09);
+        }
+
+        .matrix-table td.row-header {
+            text-align: left;
+            font-weight: 600;
+            color: #38bdf8;
+            background: rgba(15, 23, 42, 0.65);
+            border-right: 1px solid rgba(255, 255, 255, 0.07);
+        }
+
+        /* Heatmap specific cell */
+        .heatmap-cell {
+            position: relative;
+            cursor: pointer;
+            text-align: center !important;
+            font-weight: 500;
+            border-radius: 6px;
+            transition: transform 0.15s ease, box-shadow 0.15s ease, outline 0.15s ease;
+        }
+
+        .heatmap-cell:hover {
+            transform: scale(1.08);
+            z-index: 25;
+            box-shadow: 0 0 16px rgba(129, 140, 248, 0.7);
+            outline: 2px solid #a78bfa;
+        }
+
+        /* Color indicators for values */
+        .val-positive { color: #34d399; }
+        .val-negative { color: #f87171; }
+        .val-neutral  { color: #94a3b8; }
+
+        /* Scrollbars */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.6);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #475569;
+        }
+
+        /* Interactive SVG Arc paths */
+        .arc-line {
+            transition: stroke 0.2s ease, stroke-width 0.2s ease, opacity 0.2s ease;
+        }
+
+        .arc-line:hover {
+            stroke: #ec4899 !important;
+            stroke-width: 4 !important;
+            opacity: 1 !important;
+        }
+
+        /* Stepper active badge */
+        .step-pill.active {
+            background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+            color: #ffffff;
+            border-color: #818cf8;
+            box-shadow: 0 4px 14px rgba(99, 102, 241, 0.4);
+        }
+
+        /* Tooltip */
+        #matrix-tooltip {
+            pointer-events: none;
+            transition: opacity 0.12s ease, transform 0.12s ease;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.7), 0 0 15px rgba(99, 102, 241, 0.3);
+        }
+    </style>
+</head>
+<body class="p-3 sm:p-6 md:p-8">
+
+    <!-- FLOATING POPUP TOOLTIP -->
+    <div id="matrix-tooltip" class="fixed hidden z-50 bg-slate-900/95 border border-indigo-500/50 text-slate-100 text-xs rounded-xl px-3.5 py-2.5 backdrop-blur-md max-w-xs shadow-2xl">
+        <div id="tooltip-content"></div>
+    </div>
+
+    <!-- MAIN APP CONTAINER -->
+    <div class="max-w-7xl mx-auto space-y-6">
+
+        <!-- HEADER -->
+        <header class="glass-panel rounded-2xl p-5 sm:p-6 relative overflow-hidden">
+            <div class="absolute -right-20 -top-20 w-72 h-72 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none"></div>
+            <div class="absolute -left-20 -bottom-20 w-72 h-72 bg-purple-500/10 rounded-full blur-3xl pointer-events-none"></div>
+
+            <div class="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div class="flex items-center gap-3.5">
+                    <div class="w-12 h-12 rounded-xl bg-gradient-to-tr from-indigo-500 via-purple-600 to-pink-500 flex items-center justify-center shadow-lg shadow-indigo-500/25 shrink-0">
+                        <svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <h1 class="text-2xl md:text-3xl font-extrabold tracking-tight text-white">
+                                Attention<span class="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-pink-400">Lens</span>
+                            </h1>
+                            <span class="bg-indigo-500/20 text-indigo-300 text-xs font-semibold px-2.5 py-0.5 rounded-full border border-indigo-500/30">
+                                Scaled Dot-Product
+                            </span>
+                            <span id="backendStatusBadge" class="hidden text-[11px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                Flask API Connected
+                            </span>
+                        </div>
+                        <p class="text-slate-400 text-sm mt-0.5">
+                            Interactive step-by-step mathematical visualizer of Transformer Self-Attention
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Model parameters badge & guide trigger -->
+                <div class="flex flex-wrap items-center gap-2">
+                    <div class="flex items-center gap-1.5 bg-slate-800/80 border border-slate-700/60 rounded-lg px-3 py-1.5 text-xs text-slate-300 font-mono">
+                        <span class="text-slate-500">d_model:</span>
+                        <span class="font-bold text-indigo-400" id="badge-dmodel">4</span>
+                    </div>
+                    <div class="flex items-center gap-1.5 bg-slate-800/80 border border-slate-700/60 rounded-lg px-3 py-1.5 text-xs text-slate-300 font-mono">
+                        <span class="text-slate-500">d_k:</span>
+                        <span class="font-bold text-indigo-400" id="badge-dk">4</span>
+                    </div>
+                    <div class="flex items-center gap-1.5 bg-slate-800/80 border border-slate-700/60 rounded-lg px-3 py-1.5 text-xs text-slate-300 font-mono">
+                        <span class="text-slate-500">Heads:</span>
+                        <span class="font-bold text-purple-400">1</span>
+                    </div>
+                    <button onclick="toggleModal('infoModal')" class="flex items-center gap-1.5 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/40 rounded-lg px-3 py-1.5 text-xs font-medium transition cursor-pointer">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                        <span>Formula Guide</span>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- INPUT & QUICK PRESETS -->
+        <div class="glass-panel rounded-2xl p-5 sm:p-6 shadow-xl border border-slate-800">
+            <div class="space-y-4">
+                <div class="flex flex-col sm:flex-row gap-3">
+                    <div class="relative flex-1">
+                        <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"/></svg>
+                        </div>
+                        <input type="text" id="inputText" 
+                               value="attention is all you need" 
+                               placeholder="Type a sentence (e.g., attention is all you need)..." 
+                               class="w-full bg-slate-900/90 text-white placeholder-slate-500 pl-11 pr-24 py-3.5 rounded-xl border border-slate-700 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 text-base transition font-medium"
+                               onkeydown="if(event.key === 'Enter') processText()">
+                        <div class="absolute inset-y-0 right-2 flex items-center gap-1">
+                            <button onclick="clearInput()" title="Clear text" class="text-slate-500 hover:text-slate-300 p-1.5 rounded-md hover:bg-slate-800 transition">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                            </button>
+                        </div>
+                    </div>
+                    <button id="calcBtn" onclick="processText()" class="bg-gradient-to-r from-indigo-500 via-indigo-600 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white font-semibold px-6 py-3.5 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/30 transition transform active:scale-95 disabled:opacity-50 cursor-pointer">
+                        <svg id="calcIcon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                        <svg id="calcSpinner" class="w-5 h-5 animate-spin hidden" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path></svg>
+                        <span>Compute Attention</span>
+                    </button>
+                </div>
+
+                <!-- PRESET BUTTONS -->
+                <div class="flex flex-wrap items-center gap-2 pt-1 text-xs">
+                    <span class="text-slate-400 font-medium">Quick samples:</span>
+                    <button onclick="setPreset('attention is all you need')" class="preset-pill bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-white px-3 py-1 rounded-full border border-slate-700/80 transition cursor-pointer">"attention is all you need"</button>
+                    <button onclick="setPreset('the bank by the river')" class="preset-pill bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-white px-3 py-1 rounded-full border border-slate-700/80 transition cursor-pointer">"the bank by the river"</button>
+                    <button onclick="setPreset('time flies like an arrow')" class="preset-pill bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-white px-3 py-1 rounded-full border border-slate-700/80 transition cursor-pointer">"time flies like an arrow"</button>
+                    <button onclick="setPreset('deep learning transformers')" class="preset-pill bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-white px-3 py-1 rounded-full border border-slate-700/80 transition cursor-pointer">"deep learning transformers"</button>
+                    <button onclick="setPreset('learning is fun')" class="preset-pill bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-white px-3 py-1 rounded-full border border-slate-700/80 transition cursor-pointer">"learning is fun"</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- PIPELINE STEPPER NAV -->
+        <nav id="stepperNav" class="glass-panel rounded-xl p-2 hidden">
+            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 text-xs">
+                <button onclick="scrollToStep('step-1')" class="step-pill flex items-center justify-between p-2.5 rounded-lg border border-slate-700/60 transition text-left hover:bg-slate-800/60 cursor-pointer">
+                    <div class="flex items-center gap-2">
+                        <span class="w-6 h-6 rounded-full bg-slate-800 text-indigo-400 flex items-center justify-center font-bold">1</span>
+                        <div>
+                            <div class="font-semibold text-white">Embeddings</div>
+                            <div class="text-[10px] text-slate-400">Tokens &rarr; Vectors</div>
+                        </div>
+                    </div>
+                    <span class="font-mono text-[10px] text-slate-400 px-1.5 py-0.5 rounded bg-black/30">[N&times;4]</span>
+                </button>
+
+                <button onclick="scrollToStep('step-2')" class="step-pill flex items-center justify-between p-2.5 rounded-lg border border-slate-700/60 transition text-left hover:bg-slate-800/60 cursor-pointer">
+                    <div class="flex items-center gap-2">
+                        <span class="w-6 h-6 rounded-full bg-slate-800 text-indigo-400 flex items-center justify-center font-bold">2</span>
+                        <div>
+                            <div class="font-semibold text-white">Projections</div>
+                            <div class="text-[10px] text-slate-400">Q, K, V Matrices</div>
+                        </div>
+                    </div>
+                    <span class="font-mono text-[10px] text-slate-400 px-1.5 py-0.5 rounded bg-black/30">[N&times;4]</span>
+                </button>
+
+                <button onclick="scrollToStep('step-3')" class="step-pill flex items-center justify-between p-2.5 rounded-lg border border-slate-700/60 transition text-left hover:bg-slate-800/60 cursor-pointer">
+                    <div class="flex items-center gap-2">
+                        <span class="w-6 h-6 rounded-full bg-slate-800 text-indigo-400 flex items-center justify-center font-bold">3</span>
+                        <div>
+                            <div class="font-semibold text-white">Raw Scores</div>
+                            <div class="text-[10px] text-slate-400">Dot-Product Q&middot;Kᵀ</div>
+                        </div>
+                    </div>
+                    <span class="font-mono text-[10px] text-slate-400 px-1.5 py-0.5 rounded bg-black/30">[N&times;N]</span>
+                </button>
+
+                <button onclick="scrollToStep('step-4')" class="step-pill active flex items-center justify-between p-2.5 rounded-lg border border-indigo-500/50 transition text-left cursor-pointer">
+                    <div class="flex items-center gap-2">
+                        <span class="w-6 h-6 rounded-full bg-indigo-600 text-white flex items-center justify-center font-bold">4</span>
+                        <div>
+                            <div class="font-semibold text-white">Attention Heatmap</div>
+                            <div class="text-[10px] text-indigo-200">Softmax(S/&radic;d_k)</div>
+                        </div>
+                    </div>
+                    <span class="font-mono text-[10px] text-indigo-200 px-1.5 py-0.5 rounded bg-black/40">[N&times;N]</span>
+                </button>
+
+                <button onclick="scrollToStep('step-5')" class="step-pill flex items-center justify-between p-2.5 rounded-lg border border-slate-700/60 transition text-left hover:bg-slate-800/60 cursor-pointer">
+                    <div class="flex items-center gap-2">
+                        <span class="w-6 h-6 rounded-full bg-slate-800 text-indigo-400 flex items-center justify-center font-bold">5</span>
+                        <div>
+                            <div class="font-semibold text-white">Context Output</div>
+                            <div class="text-[10px] text-slate-400">Weighted Values Z</div>
+                        </div>
+                    </div>
+                    <span class="font-mono text-[10px] text-slate-400 px-1.5 py-0.5 rounded bg-black/30">[N&times;4]</span>
+                </button>
+            </div>
+        </nav>
+
+        <!-- RESULTS CONTAINER -->
+        <div id="results" class="space-y-8">
+            <!-- Dynamic calculation content will render here -->
+        </div>
+
+        <!-- FOOTER -->
+        <footer class="text-center text-xs text-slate-500 py-8 border-t border-slate-800/80 space-y-2">
+            <div>
+                AttentionLens &middot; Educational Transformer Visualization
+            </div>
+            <div class="font-mono text-slate-400 text-[11px]">
+                $$\text{Attention}(Q, K, V) = \text{softmax}\left(\frac{Q K^T}{\sqrt{d_k}}\right) V$$
+            </div>
+        </footer>
+
+    </div>
+
+    <!-- MATH GUIDE MODAL -->
+    <div id="infoModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 hidden">
+        <div class="glass-panel max-w-2xl w-full rounded-2xl p-6 border border-slate-700 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+            <div class="flex items-center justify-between pb-3 border-b border-slate-700">
+                <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                    <span class="text-indigo-400">📐</span> The Mathematics of Self-Attention
+                </h3>
+                <button onclick="toggleModal('infoModal')" class="text-slate-400 hover:text-white text-2xl font-bold cursor-pointer">&times;</button>
+            </div>
+            
+            <div class="space-y-4 text-sm text-slate-300 leading-relaxed">
+                <div class="p-4 bg-indigo-950/40 rounded-xl border border-indigo-500/20 text-center">
+                    <div class="font-semibold text-indigo-300 mb-1 text-xs uppercase tracking-wider">The Standard Attention Equation</div>
+                    <div class="py-2 text-white font-mono text-base overflow-x-auto">
+                        $$\text{Attention}(Q, K, V) = \text{softmax}\left(\frac{Q K^T}{\sqrt{d_k}}\right) V$$
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                    <div class="bg-slate-900/80 p-3 rounded-lg border border-sky-500/30">
+                        <span class="font-bold text-sky-400 block mb-1">Query ($Q$)</span>
+                        $Q = X W_Q$<br>What the token looks for in other tokens.
+                    </div>
+                    <div class="bg-slate-900/80 p-3 rounded-lg border border-emerald-500/30">
+                        <span class="font-bold text-emerald-400 block mb-1">Key ($K$)</span>
+                        $K = X W_K$<br>What the token offers to matching queries.
+                    </div>
+                    <div class="bg-slate-900/80 p-3 rounded-lg border border-amber-500/30">
+                        <span class="font-bold text-amber-400 block mb-1">Value ($V$)</span>
+                        $V = X W_V$<br>The actual semantic content to extract.
+                    </div>
+                </div>
+
+                <div class="space-y-2 text-xs text-slate-400">
+                    <p><b class="text-slate-200">1. Dot Product ($Q K^T$):</b> Computes directional similarity between each Query and Key vector. High similarity = high compatibility.</p>
+                    <p><b class="text-slate-200">2. Scaling by $\sqrt{d_k}$:</b> As dimensions grow, dot products grow large, pushing softmax into flat regions with tiny gradients. Dividing by $\sqrt{d_k} = \sqrt{4} = 2$ keeps gradients healthy.</p>
+                    <p><b class="text-slate-200">3. Softmax:</b> Exponentiates and normalizes each row so all weights are in $[0, 1]$ and sum exactly to $1.0$ (a valid probability distribution).</p>
+                    <p><b class="text-slate-200">4. Weighted Sum ($A \cdot V$):</b> Blends the Value vectors according to attention weights, producing contextualized token representations.</p>
+                </div>
+            </div>
+
+            <div class="pt-4 border-t border-slate-700/60 flex justify-end">
+                <button onclick="toggleModal('infoModal')" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold px-4 py-2 rounded-lg transition cursor-pointer">
+                    Close Guide
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- JAVASCRIPT APPLICATION LOGIC -->
+    <script>
+        let currentData = null;
+        let selectedTokenIndex = 0;
+
+        function setPreset(text) {
+            document.getElementById('inputText').value = text;
+            processText();
+        }
+
+        function clearInput() {
+            document.getElementById('inputText').value = '';
+            document.getElementById('inputText').focus();
+        }
+
+        function toggleModal(id) {
+            const modal = document.getElementById(id);
+            modal.classList.toggle('hidden');
+        }
+
+        function scrollToStep(id) {
+            const element = document.getElementById(id);
+            if (element) {
+                element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        }
+
+        function renderMathWhenReady() {
+            if (window.renderMathInElement) {
+                renderMathInElement(document.body, {
+                    delimiters: [
+                        {left: '$$', right: '$$', display: true},
+                        {left: '$', right: '$', display: false}
+                    ],
+                    throwOnError: false
+                });
+            }
+        }
+
+        // Color interpolation for Attention Heatmap (0.0 to 1.0)
+        function getHeatmapColor(value) {
+            const v = Math.max(0, Math.min(1, value));
+            if (v < 0.20) {
+                const alpha = 0.12 + v * 1.5;
+                return `rgba(99, 102, 241, ${alpha.toFixed(2)})`;
+            } else if (v < 0.55) {
+                const alpha = 0.35 + v * 0.7;
+                return `rgba(139, 92, 246, ${alpha.toFixed(2)})`;
+            } else {
+                const alpha = 0.65 + v * 0.35;
+                return `rgba(236, 72, 153, ${alpha.toFixed(2)})`;
+            }
+        }
+
+        // Tooltip handlers
+        function moveTooltip(event) {
+            const tooltip = document.getElementById('matrix-tooltip');
+            if (tooltip.classList.contains('hidden')) return;
+            const x = Math.min(window.innerWidth - 260, event.clientX + 14);
+            const y = Math.min(window.innerHeight - 140, event.clientY + 14);
+            tooltip.style.left = `${x}px`;
+            tooltip.style.top = `${y}px`;
+        }
+
+        function hideTooltip() {
+            const tooltip = document.getElementById('matrix-tooltip');
+            tooltip.classList.add('hidden');
+        }
+
+        function showHeatmapTooltip(event, qIdx, kIdx) {
+            if (!currentData) return;
+            const qToken = currentData.tokens[qIdx];
+            const kToken = currentData.tokens[kIdx];
+            const weight = currentData.attention_weights[qIdx][kIdx];
+            const pct = (weight * 100).toFixed(1);
+            const rawScore = currentData.scores[qIdx][kIdx];
+            const scaledScore = currentData.scaled_scores[qIdx][kIdx];
+
+            const html = `
+                <div class="space-y-1 font-sans">
+                    <div class="font-bold text-white border-b border-slate-700/80 pb-1 flex items-center justify-between">
+                        <span>Attention Link</span>
+                        <span class="text-pink-400 font-mono">${pct}%</span>
+                    </div>
+                    <div class="text-xs text-slate-300">
+                        Query: <span class="font-bold text-indigo-300">&quot;${qToken}&quot;</span> &rarr; Key: <span class="font-bold text-sky-300">&quot;${kToken}&quot;</span>
+                    </div>
+                    <div class="text-[11px] text-slate-400 pt-1 space-y-0.5 font-mono">
+                        <div>Weight: <span class="text-emerald-400 font-bold">${weight.toFixed(3)}</span></div>
+                        <div>Raw Score ($Q \\cdot K^T$): <span class="text-slate-200">${rawScore.toFixed(3)}</span></div>
+                        <div>Scaled Score (/${Math.sqrt(currentData.d_k || 4).toFixed(0)}): <span class="text-slate-200">${scaledScore.toFixed(3)}</span></div>
+                    </div>
+                </div>
+            `;
+
+            const tooltip = document.getElementById('matrix-tooltip');
+            document.getElementById('tooltip-content').innerHTML = html;
+            tooltip.classList.remove('hidden');
+            moveTooltip(event);
+        }
+
+        function showMatrixTooltip(event, rowName, colName, value) {
+            const html = `
+                <div class="font-sans space-y-0.5">
+                    <div class="text-slate-400 text-[10px] uppercase font-semibold">Matrix Element</div>
+                    <div class="text-white font-medium">Row: <b class="text-indigo-300">${rowName}</b> &times; Col: <b class="text-sky-300">${colName}</b></div>
+                    <div class="text-xs font-mono font-bold text-emerald-400 pt-0.5">Value: ${value}</div>
+                </div>
+            `;
+            const tooltip = document.getElementById('matrix-tooltip');
+            document.getElementById('tooltip-content').innerHTML = html;
+            tooltip.classList.remove('hidden');
+            moveTooltip(event);
+        }
+
+        function showArcTooltip(event, qIdx, kIdx) {
+            if (!currentData) return;
+            const qToken = currentData.tokens[qIdx];
+            const kToken = currentData.tokens[kIdx];
+            const weight = currentData.attention_weights[qIdx][kIdx];
+            const pct = (weight * 100).toFixed(1);
+
+            const html = `
+                <div class="font-sans">
+                    <div class="text-white font-bold">&quot;${qToken}&quot; &rarr; &quot;${kToken}&quot;</div>
+                    <div class="text-xs text-pink-400 font-semibold font-mono mt-0.5">Attention Weight: ${pct}% (${weight.toFixed(3)})</div>
+                </div>
+            `;
+            const tooltip = document.getElementById('matrix-tooltip');
+            document.getElementById('tooltip-content').innerHTML = html;
+            tooltip.classList.remove('hidden');
+            moveTooltip(event);
+        }
+
+        // Format cell values with color
+        function formatNumber(num) {
+            const n = parseFloat(num);
+            if (isNaN(n)) return num;
+            const cls = n > 0.001 ? 'val-positive' : (n < -0.001 ? 'val-negative' : 'val-neutral');
+            return `<span class="${cls}">${n.toFixed(3)}</span>`;
+        }
+
+        // Deterministic client-side fallback if server is offline or opened statically
+        function computeClientSideFallback(text) {
+            const tokens = text.trim().split(/\s+/).slice(0, 20);
+            const D_MODEL = 4;
+            const D_K = 4;
+            
+            const W_Q = [[-0.496, -0.138, 0.647, 1.523], [-0.234, -0.234, 1.579, 0.767], [-0.469, 0.542, -0.463, -0.465], [0.241, -1.913, -1.724, -0.562]];
+            const W_K = [[-1.012, 0.314, -0.908, -1.412], [1.465, -0.225, 0.067, -1.424], [-0.544, 0.110, -1.150, 0.375], [-0.600, -0.291, -0.601, 1.852]];
+            const W_V = [[-0.013, -1.057, 0.822, 0.208], [-0.038, 1.301, 0.384, -0.428], [0.031, 1.077, 0.407, -0.301], [-0.877, -0.473, -0.078, 1.058]];
+            
+            const embeddings = tokens.map(tok => {
+                let s = tok.split('').reduce((acc, c) => acc + c.charCodeAt(0), 10);
+                return [
+                    Number(Math.sin(s * 1.1).toFixed(3)),
+                    Number(Math.cos(s * 1.3).toFixed(3)),
+                    Number(Math.sin(s * 1.7).toFixed(3)),
+                    Number(Math.cos(s * 1.9).toFixed(3))
+                ];
+            });
+            
+            function matmul(A, B) {
+                return A.map(row => 
+                    Array(B[0].length).fill(0).map((_, c) => 
+                        Number(row.reduce((sum, val, r) => sum + val * B[r][c], 0).toFixed(3))
+                    )
+                );
+            }
+            
+            const Q = matmul(embeddings, W_Q);
+            const K = matmul(embeddings, W_K);
+            const V = matmul(embeddings, W_V);
+            
+            const scores = Q.map(qRow => 
+                K.map(kRow => 
+                    Number(qRow.reduce((sum, qVal, idx) => sum + qVal * kRow[idx], 0).toFixed(3))
+                )
+            );
+            
+            const scaled_scores = scores.map(row => 
+                row.map(val => Number((val / Math.sqrt(D_K)).toFixed(3)))
+            );
+            
+            const attention_weights = scaled_scores.map(row => {
+                const max = Math.max(...row);
+                const exps = row.map(v => Math.exp(v - max));
+                const sum = exps.reduce((a, b) => a + b, 0);
+                return exps.map(v => Number((v / sum).toFixed(3)));
+            });
+            
+            const output = matmul(attention_weights, V);
+            
+            return {
+                tokens,
+                d_model: D_MODEL,
+                d_k: D_K,
+                W_Q, W_K, W_V,
+                embeddings,
+                Q, K, V,
+                scores,
+                scaled_scores,
+                attention_weights,
+                output
+            };
+        }
+
+        // Main Calculation
+        async function processText() {
+            const textInput = document.getElementById('inputText');
+            const text = textInput.value.trim();
+            if (!text) {
+                alert('Please enter at least one word to visualize.');
+                return;
+            }
+
+            const calcBtn = document.getElementById('calcBtn');
+            const calcIcon = document.getElementById('calcIcon');
+            const calcSpinner = document.getElementById('calcSpinner');
+            const backendStatusBadge = document.getElementById('backendStatusBadge');
+
+            calcBtn.disabled = true;
+            calcIcon.classList.add('hidden');
+            calcSpinner.classList.remove('hidden');
+
+            let data = null;
+
+            try {
+                const response = await fetch('/calculate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text })
+                });
+
+                if (response.ok) {
+                    data = await response.json();
+                    backendStatusBadge.classList.remove('hidden');
+                } else {
+                    const err = await response.json();
+                    alert(err.error || 'Server calculation error');
+                    return;
+                }
+            } catch (err) {
+                // If Flask server is not yet running or opened as local file, seamlessly use fallback
+                console.warn('Backend /calculate not reachable, using simulation fallback:', err);
+                data = computeClientSideFallback(text);
+                backendStatusBadge.innerText = 'Offline Simulation';
+                backendStatusBadge.className = 'text-[11px] font-mono px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20';
+                backendStatusBadge.classList.remove('hidden');
+            } finally {
+                calcBtn.disabled = false;
+                calcIcon.classList.remove('hidden');
+                calcSpinner.classList.add('hidden');
+            }
+
+            if (data) {
+                currentData = data;
+                selectedTokenIndex = 0;
+                
+                if (data.d_model) document.getElementById('badge-dmodel').innerText = data.d_model;
+                if (data.d_k) document.getElementById('badge-dk').innerText = data.d_k;
+
+                renderUI(data);
+                document.getElementById('stepperNav').classList.remove('hidden');
+            }
+        }
+
+        // Render generic Matrix Table
+        function renderMatrixTable(matrix, rowHeaders, colHeaders, label) {
+            let html = `
+            <div class="overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/60 shadow-inner">
+                <table class="matrix-table">
+                    <thead>
+                        <tr>
+                            <th class="w-32 text-left">${label || 'Token'}</th>
+                            ${colHeaders.map(col => `<th class="text-center">${col}</th>`).join('')}
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            matrix.forEach((row, rIdx) => {
+                const rowLabel = rowHeaders[rIdx] || `R${rIdx}`;
+                html += `<tr>
+                    <td class="row-header">
+                        <span class="inline-block px-1.5 py-0.5 rounded bg-indigo-950/80 border border-indigo-800/40 text-indigo-300 text-xs font-mono mr-1">${rIdx}</span>
+                        ${rowLabel}
+                    </td>`;
+                row.forEach((val, cIdx) => {
+                    const colLabel = colHeaders[cIdx] || `C${cIdx}`;
+                    html += `
+                        <td onmouseenter="showMatrixTooltip(event, '${rowLabel}', '${colLabel}', ${val})" 
+                            onmousemove="moveTooltip(event)" 
+                            onmouseleave="hideTooltip()">${formatNumber(val)}</td>`;
+                });
+                html += '</tr>';
+            });
+
+            html += `</tbody></table></div>`;
+            return html;
+        }
+
+        // Render Attention Heatmap with interactive percentages
+        function renderAttentionHeatmap(weights, tokens) {
+            let html = `
+            <div class="overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/80 shadow-2xl p-2.5">
+                <table class="matrix-table">
+                    <thead>
+                        <tr>
+                            <th class="text-left w-36 text-indigo-300">
+                                <div class="text-[10px] text-slate-500 uppercase">Query \\ Key</div>
+                                Tokens
+                            </th>
+                            ${tokens.map((t, idx) => `
+                                <th class="text-center text-slate-200">
+                                    <div class="text-[10px] text-slate-500 font-mono">K${idx}</div>
+                                    <span class="text-sky-300 font-semibold">${t}</span>
+                                </th>
+                            `).join('')}
+                            <th class="text-center text-xs text-purple-400 font-mono">Row Sum</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            weights.forEach((row, i) => {
+                const qToken = tokens[i];
+                const rowSum = row.reduce((a, b) => a + b, 0).toFixed(3);
+
+                html += `<tr>
+                    <td class="row-header font-semibold text-white">
+                        <span class="inline-block px-1.5 py-0.5 rounded bg-indigo-950 border border-indigo-800/50 text-indigo-400 text-xs font-mono mr-1.5">Q${i}</span>
+                        <span class="text-indigo-200">${qToken}</span>
+                    </td>`;
+
+                row.forEach((weight, j) => {
+                    const pct = (weight * 100).toFixed(1);
+                    const bgColor = getHeatmapColor(weight);
+
+                    html += `
+                        <td class="heatmap-cell" 
+                            style="background-color: ${bgColor};"
+                            onmouseenter="showHeatmapTooltip(event, ${i}, ${j}); highlightBipartiteToken(${i})"
+                            onmousemove="moveTooltip(event)"
+                            onmouseleave="hideTooltip(); resetBipartiteHighlight()"
+                            onclick="selectToken(${i})">
+                            <div class="text-xs font-mono font-bold text-white drop-shadow">${pct}%</div>
+                            <div class="text-[10px] text-slate-300/80 font-mono">${weight.toFixed(3)}</div>
+                        </td>
+                    `;
+                });
+
+                html += `
+                    <td class="text-center font-mono text-xs text-slate-400 bg-slate-900/60 font-semibold">
+                        <span class="px-2 py-1 rounded ${Math.abs(rowSum - 1.0) < 0.02 ? 'text-emerald-400 bg-emerald-950/40 border border-emerald-800/40' : 'text-amber-400'}">
+                            &sum; ${rowSum}
+                        </span>
+                    </td>
+                </tr>`;
+            });
+
+            html += `</tbody></table></div>`;
+            return html;
+        }
+
+        // Render Interactive Bipartite Connection Diagram (SVG)
+        function renderBipartiteDiagram(tokens, weights) {
+            const count = tokens.length;
+            const height = Math.max(260, count * 52);
+            const width = 640;
+            const leftX = 140;
+            const rightX = 500;
+
+            let svgContent = `
+                <svg id="attentionSvg" class="w-full max-w-2xl mx-auto overflow-visible select-none" viewBox="0 0 ${width} ${height}">
+                    <defs>
+                        <linearGradient id="arcGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                            <stop offset="0%" stop-color="#6366f1" />
+                            <stop offset="100%" stop-color="#38bdf8" />
+                        </linearGradient>
+                    </defs>
+            `;
+
+            // Draw connection lines
+            weights.forEach((row, i) => {
+                const y1 = 30 + (i * ((height - 60) / Math.max(1, count - 1)));
+                row.forEach((weight, j) => {
+                    const y2 = 30 + (j * ((height - 60) / Math.max(1, count - 1)));
+                    const strokeWidth = Math.max(1.2, weight * 9);
+                    const opacity = Math.max(0.08, weight * 0.95);
+                    const cX1 = leftX + (rightX - leftX) * 0.45;
+                    const cX2 = leftX + (rightX - leftX) * 0.55;
+
+                    svgContent += `
+                        <path class="arc-line arc-from-${i}" 
+                              data-from="${i}" data-to="${j}"
+                              d="M ${leftX} ${y1} C ${cX1} ${y1}, ${cX2} ${y2}, ${rightX} ${y2}"
+                              fill="none" 
+                              stroke="url(#arcGrad)" 
+                              stroke-width="${strokeWidth}" 
+                              stroke-linecap="round"
+                              opacity="${opacity}"
+                              onmouseenter="showArcTooltip(event, ${i}, ${j})"
+                              onmousemove="moveTooltip(event)"
+                              onmouseleave="hideTooltip()" />
+                    `;
+                });
+            });
+
+            // Draw Left Column: Query Tokens
+            tokens.forEach((t, i) => {
+                const y = 30 + (i * ((height - 60) / Math.max(1, count - 1)));
+                svgContent += `
+                    <g class="cursor-pointer" onclick="selectToken(${i})" onmouseenter="highlightBipartiteToken(${i})" onmouseleave="resetBipartiteHighlight()">
+                        <rect x="10" y="${y - 16}" width="120" height="32" rx="8" fill="#1e1b4b" stroke="#6366f1" stroke-width="1.5" />
+                        <text x="70" y="${y + 5}" fill="#ffffff" font-size="12" font-weight="600" text-anchor="middle" font-family="Inter, sans-serif">
+                            ${t}
+                        </text>
+                        <circle cx="${leftX}" cy="${y}" r="4.5" fill="#818cf8" />
+                    </g>
+                `;
+            });
+
+            // Draw Right Column: Key Tokens
+            tokens.forEach((t, j) => {
+                const y = 30 + (j * ((height - 60) / Math.max(1, count - 1)));
+                svgContent += `
+                    <g class="cursor-pointer" onmouseenter="showMatrixTooltip(event, 'Key Token', '${t}', 'Target')" onmousemove="moveTooltip(event)" onmouseleave="hideTooltip()">
+                        <rect x="${rightX + 10}" y="${y - 16}" width="120" height="32" rx="8" fill="#0c4a6e" stroke="#38bdf8" stroke-width="1.5" />
+                        <text x="${rightX + 70}" y="${y + 5}" fill="#ffffff" font-size="12" font-weight="600" text-anchor="middle" font-family="Inter, sans-serif">
+                            ${t}
+                        </text>
+                        <circle cx="${rightX}" cy="${y}" r="4.5" fill="#38bdf8" />
+                    </g>
+                `;
+            });
+
+            svgContent += `</svg>`;
+            return svgContent;
+        }
+
+        // Highlight SVG lines when hovering a token
+        function highlightBipartiteToken(index) {
+            const lines = document.querySelectorAll('.arc-line');
+            lines.forEach(line => {
+                if (parseInt(line.getAttribute('data-from')) === index) {
+                    line.style.opacity = '1';
+                    line.style.stroke = '#ec4899';
+                    line.style.strokeWidth = Math.max(3, parseFloat(line.getAttribute('stroke-width')) * 1.5);
+                } else {
+                    line.style.opacity = '0.04';
+                }
+            });
+        }
+
+        function resetBipartiteHighlight() {
+            const lines = document.querySelectorAll('.arc-line');
+            lines.forEach(line => {
+                line.style.opacity = '';
+                line.style.stroke = '';
+                line.style.strokeWidth = '';
+            });
+        }
+
+        // Token Spotlight
+        function selectToken(index) {
+            selectedTokenIndex = index;
+            renderTokenSpotlight();
+            highlightBipartiteToken(index);
+        }
+
+        function renderTokenSpotlight() {
+            if (!currentData) return;
+            const spotlightEl = document.getElementById('token-spotlight-box');
+            if (!spotlightEl) return;
+
+            const t = currentData.tokens[selectedTokenIndex];
+            const weights = currentData.attention_weights[selectedTokenIndex];
+
+            // Render token switcher pills
+            let tokenPills = '';
+            currentData.tokens.forEach((tok, idx) => {
+                const isActive = idx === selectedTokenIndex;
+                tokenPills += `
+                    <button onclick="selectToken(${idx})" class="px-3 py-1 rounded-lg text-xs font-medium transition cursor-pointer ${isActive ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/30' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}">
+                        ${tok}
+                    </button>
+                `;
+            });
+
+            let barsHtml = '';
+            weights.forEach((w, j) => {
+                const keyToken = currentData.tokens[j];
+                const pct = (w * 100).toFixed(1);
+                barsHtml += `
+                    <div class="space-y-1">
+                        <div class="flex justify-between text-xs">
+                            <span class="font-medium text-slate-200">Pays attention to: <span class="text-sky-300 font-semibold font-mono">&quot;${keyToken}&quot;</span></span>
+                            <span class="font-mono text-indigo-400 font-semibold">${pct}%</span>
+                        </div>
+                        <div class="w-full bg-slate-800 rounded-full h-2.5 overflow-hidden">
+                            <div class="bg-gradient-to-r from-indigo-500 to-pink-500 h-2.5 rounded-full transition-all duration-300" style="width: ${pct}%"></div>
+                        </div>
+                    </div>
+                `;
+            });
+
+            spotlightEl.innerHTML = `
+                <div class="space-y-3">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-800">
+                        <div>
+                            <div class="text-xs font-semibold uppercase tracking-wider text-indigo-400 mb-1">Token Spotlight Inspector</div>
+                            <div class="flex items-center gap-2">
+                                <span class="px-2 py-0.5 rounded bg-indigo-950 border border-indigo-800 text-indigo-300 font-mono text-xs">Token #${selectedTokenIndex}</span>
+                                <h4 class="text-xl font-bold text-white">&quot;${t}&quot;</h4>
+                            </div>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-1.5">
+                            <span class="text-xs text-slate-400 mr-1">Switch token:</span>
+                            ${tokenPills}
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-5 pt-2">
+                        <div class="space-y-3">
+                            <div class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Attention Distribution for &quot;${t}&quot;</div>
+                            ${barsHtml}
+                        </div>
+                        <div class="space-y-3 bg-slate-900/70 p-4 rounded-xl border border-slate-800 text-xs">
+                            <div class="font-semibold text-slate-300 uppercase tracking-wider">Vector State Details</div>
+                            <div class="space-y-2.5 text-slate-400">
+                                <div>
+                                    <span class="text-slate-500 font-medium">Original Embedding ($X_${selectedTokenIndex}$):</span>
+                                    <div class="font-mono text-slate-300 bg-slate-950 p-2 rounded-lg mt-0.5 border border-slate-800/80">
+                                        [${currentData.embeddings[selectedTokenIndex].join(', ')}]
+                                    </div>
+                                </div>
+                                <div>
+                                    <span class="text-slate-500 font-medium">Query Projection ($Q_${selectedTokenIndex}$):</span>
+                                    <div class="font-mono text-sky-300 bg-slate-950 p-2 rounded-lg mt-0.5 border border-slate-800/80">
+                                        [${currentData.Q[selectedTokenIndex].join(', ')}]
+                                    </div>
+                                </div>
+                                <div>
+                                    <span class="text-slate-500 font-medium">Contextual Output Vector ($Z_${selectedTokenIndex}$ = Output):</span>
+                                    <div class="font-mono text-emerald-300 bg-slate-950 p-2 rounded-lg mt-0.5 border border-emerald-950/40">
+                                        [${currentData.output[selectedTokenIndex].join(', ')}]
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Full UI Render
+        function renderUI(data) {
+            const resultsContainer = document.getElementById('results');
+            const dimHeaders = ['Dim 1', 'Dim 2', 'Dim 3', 'Dim 4'];
+
+            resultsContainer.innerHTML = `
+                <!-- STEP 1: TOKENIZATION & WORD EMBEDDINGS -->
+                <section id="step-1" class="glass-panel rounded-2xl p-5 sm:p-6 space-y-4">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-4">
+                        <div>
+                            <div class="flex items-center gap-2.5">
+                                <span class="w-7 h-7 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center font-bold text-sm border border-indigo-500/30">1</span>
+                                <h2 class="text-xl font-bold text-white">Input Tokenization & Embeddings</h2>
+                            </div>
+                            <p class="text-xs text-slate-400 mt-1">
+                                Text is tokenized into $N = ${data.tokens.length}$ tokens and mapped to dense vector embeddings of dimension $d_{\\text{model}} = 4$.
+                            </p>
+                        </div>
+                        <span class="font-mono text-xs text-indigo-400 bg-indigo-950/60 border border-indigo-800/40 px-2.5 py-1 rounded-lg self-start">
+                            Matrix X: [${data.tokens.length} &times; 4]
+                        </span>
+                    </div>
+
+                    <!-- Token badges -->
+                    <div class="flex flex-wrap items-center gap-2 py-1">
+                        <span class="text-xs text-slate-400 font-medium">Tokens:</span>
+                        ${data.tokens.map((t, idx) => `
+                            <span class="inline-flex items-center gap-1.5 bg-slate-800/90 border border-slate-700 px-3 py-1 rounded-lg text-xs font-medium text-white shadow-sm">
+                                <span class="font-mono text-[10px] text-indigo-400 bg-slate-900 px-1 rounded">${idx}</span>
+                                <b>${t}</b>
+                            </span>
+                        `).join('')}
+                    </div>
+
+                    <!-- Table -->
+                    ${renderMatrixTable(data.embeddings, data.tokens, dimHeaders, 'Input Token')}
+                </section>
+
+                <!-- STEP 2: LINEAR PROJECTIONS (Q, K, V) -->
+                <section id="step-2" class="glass-panel rounded-2xl p-5 sm:p-6 space-y-4">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-4">
+                        <div>
+                            <div class="flex items-center gap-2.5">
+                                <span class="w-7 h-7 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center font-bold text-sm border border-indigo-500/30">2</span>
+                                <h2 class="text-xl font-bold text-white">Linear Projections: Query, Key, & Value</h2>
+                            </div>
+                            <p class="text-xs text-slate-400 mt-1">
+                                Embeddings $X$ are multiplied by learned weight matrices $W_Q, W_K, W_V \\in \\mathbb{R}^{4 \\times 4}$ to produce $Q, K, V$.
+                            </p>
+                        </div>
+                        <span class="font-mono text-xs text-indigo-400 bg-indigo-950/60 border border-indigo-800/40 px-2.5 py-1 rounded-lg self-start">
+                            Q, K, V: [${data.tokens.length} &times; 4]
+                        </span>
+                    </div>
+
+                    <!-- Intuition Cards -->
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3.5 text-xs">
+                        <div class="glass-panel-subtle p-3.5 rounded-xl border border-sky-500/20">
+                            <div class="flex items-center justify-between text-sky-400 font-bold mb-1">
+                                <span>Query (Q = X &middot; W_Q)</span>
+                                <span class="text-[10px] bg-sky-950 px-1.5 py-0.5 rounded border border-sky-800/40">Search Target</span>
+                            </div>
+                            <p class="text-slate-400">What each token is looking for in other tokens across the sentence.</p>
+                        </div>
+                        <div class="glass-panel-subtle p-3.5 rounded-xl border border-emerald-500/20">
+                            <div class="flex items-center justify-between text-emerald-400 font-bold mb-1">
+                                <span>Key (K = X &middot; W_K)</span>
+                                <span class="text-[10px] bg-emerald-950 px-1.5 py-0.5 rounded border border-emerald-800/40">Matching Key</span>
+                            </div>
+                            <p class="text-slate-400">What each token offers to incoming queries seeking context.</p>
+                        </div>
+                        <div class="glass-panel-subtle p-3.5 rounded-xl border border-amber-500/20">
+                            <div class="flex items-center justify-between text-amber-400 font-bold mb-1">
+                                <span>Value (V = X &middot; W_V)</span>
+                                <span class="text-[10px] bg-amber-950 px-1.5 py-0.5 rounded border border-amber-800/40">Content Payload</span>
+                            </div>
+                            <p class="text-slate-400">The actual content that is aggregated when queries match keys.</p>
+                        </div>
+                    </div>
+
+                    <!-- TAB SELECTOR FOR Q, K, V -->
+                    <div class="space-y-4 pt-2">
+                        <div class="flex flex-wrap border-b border-slate-800 text-xs font-medium">
+                            <button id="tab-btn-q" onclick="switchQKVTab('Q')" class="py-2.5 px-4 text-sky-400 border-b-2 border-sky-400 transition cursor-pointer">Query Matrix (Q)</button>
+                            <button id="tab-btn-k" onclick="switchQKVTab('K')" class="py-2.5 px-4 text-slate-400 hover:text-white transition cursor-pointer">Key Matrix (K)</button>
+                            <button id="tab-btn-v" onclick="switchQKVTab('V')" class="py-2.5 px-4 text-slate-400 hover:text-white transition cursor-pointer">Value Matrix (V)</button>
+                            <button id="tab-btn-weights" onclick="switchQKVTab('weights')" class="py-2.5 px-4 text-slate-400 hover:text-white transition ml-auto font-mono text-[11px] cursor-pointer">&plus; Learned Weights (W_Q, W_K, W_V)</button>
+                        </div>
+
+                        <div id="qkv-tab-content">
+                            <!-- Injected by switchQKVTab -->
+                        </div>
+                    </div>
+                </section>
+
+                <!-- STEP 3: RAW ATTENTION SCORES (Q x K^T) -->
+                <section id="step-3" class="glass-panel rounded-2xl p-5 sm:p-6 space-y-4">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-4">
+                        <div>
+                            <div class="flex items-center gap-2.5">
+                                <span class="w-7 h-7 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center font-bold text-sm border border-indigo-500/30">3</span>
+                                <h2 class="text-xl font-bold text-white">Raw Attention Scores ($S = Q K^T$)</h2>
+                            </div>
+                            <p class="text-xs text-slate-400 mt-1">
+                                Pairwise dot-product between every Query $Q_i$ and Key $K_j$. High positive values denote strong semantic alignment.
+                            </p>
+                        </div>
+                        <span class="font-mono text-xs text-indigo-400 bg-indigo-950/60 border border-indigo-800/40 px-2.5 py-1 rounded-lg self-start">
+                            Matrix S: [${data.tokens.length} &times; ${data.tokens.length}]
+                        </span>
+                    </div>
+
+                    ${renderMatrixTable(data.scores, data.tokens, data.tokens, 'Query \\ Key')}
+                </section>
+
+                <!-- STEP 4: ATTENTION WEIGHTS (THE CORE VISUALIZATION) -->
+                <section id="step-4" class="glass-panel rounded-2xl p-5 sm:p-6 space-y-6 ring-1 ring-indigo-500/50">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-4">
+                        <div>
+                            <div class="flex items-center gap-2.5">
+                                <span class="w-7 h-7 rounded-lg bg-gradient-to-tr from-indigo-500 to-pink-500 text-white flex items-center justify-center font-bold text-sm shadow-md">4</span>
+                                <h2 class="text-xl font-bold text-white">Attention Weights: $\text{Softmax}\left(\frac{Q K^T}{\sqrt{d_k}}\right)$</h2>
+                            </div>
+                            <p class="text-xs text-slate-400 mt-1">
+                                Scores are scaled by $\sqrt{d_k} = \sqrt{4} = 2.0$, then normalized via Softmax so each row sums to $1.0$ (100% total attention).
+                            </p>
+                        </div>
+                        <span class="font-mono text-xs text-purple-300 bg-purple-950/60 border border-purple-800/40 px-2.5 py-1 rounded-lg self-start">
+                            Weights A: [${data.tokens.length} &times; ${data.tokens.length}]
+                        </span>
+                    </div>
+
+                    <!-- HEATMAP SECTION -->
+                    <div class="space-y-3">
+                        <div class="flex items-center justify-between flex-wrap gap-2">
+                            <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                                <span>🔥</span> Interactive Attention Heatmap
+                            </h3>
+                            <div class="flex items-center gap-2 text-xs text-slate-400">
+                                <span>Intensity:</span>
+                                <div class="w-24 h-3 rounded-full bg-gradient-to-r from-indigo-950 via-indigo-600 to-pink-500 border border-slate-700"></div>
+                                <span class="font-mono text-[10px]">0% &rarr; 100%</span>
+                            </div>
+                        </div>
+
+                        ${renderAttentionHeatmap(data.attention_weights, data.tokens)}
+                    </div>
+
+                    <!-- BIPARTITE GRAPH SECTION -->
+                    <div class="pt-4 border-t border-slate-800 space-y-3">
+                        <div class="flex items-center justify-between flex-wrap gap-2">
+                            <div>
+                                <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                                    <span>🌐</span> Attention Connection Graph
+                                </h3>
+                                <p class="text-xs text-slate-400">Hover any query token on the left to highlight where its attention connects.</p>
+                            </div>
+                            <span class="text-xs text-slate-500 font-mono hidden sm:inline">Thicker beam = Greater attention weight</span>
+                        </div>
+
+                        <div class="bg-slate-950/70 p-4 rounded-xl border border-slate-800 overflow-x-auto">
+                            ${renderBipartiteDiagram(data.tokens, data.attention_weights)}
+                        </div>
+                    </div>
+
+                    <!-- TOKEN SPOTLIGHT INSPECTOR -->
+                    <div id="token-spotlight-box" class="glass-panel-subtle p-5 rounded-xl border border-slate-800">
+                        <!-- Rendered by renderTokenSpotlight -->
+                    </div>
+                </section>
+
+                <!-- STEP 5: FINAL CONTEXT VECTORS -->
+                <section id="step-5" class="glass-panel rounded-2xl p-5 sm:p-6 space-y-4">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-4">
+                        <div>
+                            <div class="flex items-center gap-2.5">
+                                <span class="w-7 h-7 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold text-sm border border-emerald-500/30">5</span>
+                                <h2 class="text-xl font-bold text-white">Contextual Output Vectors ($Z = A \cdot V$)</h2>
+                            </div>
+                            <p class="text-xs text-slate-400 mt-1">
+                                The final contextual embeddings where each token's vector is a weighted combination of all Value vectors in the sequence.
+                            </p>
+                        </div>
+                        <span class="font-mono text-xs text-emerald-400 bg-emerald-950/60 border border-emerald-800/40 px-2.5 py-1 rounded-lg self-start">
+                            Output Z: [${data.tokens.length} &times; 4]
+                        </span>
+                    </div>
+
+                    ${renderMatrixTable(data.output, data.tokens, dimHeaders, 'Contextual Token')}
+                </section>
+            `;
+
+            // Initialize tabs and spotlight
+            switchQKVTab('Q');
+            renderTokenSpotlight();
+
+            // Re-render KaTeX math formulas
+            renderMathWhenReady();
+        }
+
+        // Q, K, V Tab Switcher
+        function switchQKVTab(tab) {
+            if (!currentData) return;
+            const content = document.getElementById('qkv-tab-content');
+            const dimHeaders = ['Dim 1', 'Dim 2', 'Dim 3', 'Dim 4'];
+
+            // Update tab styles
+            ['q', 'k', 'v', 'weights'].forEach(t => {
+                const btn = document.getElementById(`tab-btn-${t}`);
+                if (btn) {
+                    if (t.toUpperCase() === tab || (t === 'weights' && tab === 'weights')) {
+                        btn.className = 'py-2.5 px-4 text-indigo-400 border-b-2 border-indigo-400 transition font-semibold cursor-pointer';
+                    } else {
+                        btn.className = 'py-2.5 px-4 text-slate-400 hover:text-white transition cursor-pointer';
+                    }
+                }
+            });
+
+            if (tab === 'Q') {
+                content.innerHTML = renderMatrixTable(currentData.Q, currentData.tokens, dimHeaders, 'Query Vector');
+            } else if (tab === 'K') {
+                content.innerHTML = renderMatrixTable(currentData.K, currentData.tokens, dimHeaders, 'Key Vector');
+            } else if (tab === 'V') {
+                content.innerHTML = renderMatrixTable(currentData.V, currentData.tokens, dimHeaders, 'Value Vector');
+            } else if (tab === 'weights') {
+                content.innerHTML = `
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+                        <div>
+                            <div class="text-xs font-mono font-bold text-sky-400 mb-2">Query Weights W_Q [4x4]</div>
+                            ${renderMatrixTable(currentData.W_Q, ['d0','d1','d2','d3'], ['k0','k1','k2','k3'], 'Dim')}
+                        </div>
+                        <div>
+                            <div class="text-xs font-mono font-bold text-emerald-400 mb-2">Key Weights W_K [4x4]</div>
+                            ${renderMatrixTable(currentData.W_K, ['d0','d1','d2','d3'], ['k0','k1','k2','k3'], 'Dim')}
+                        </div>
+                        <div>
+                            <div class="text-xs font-mono font-bold text-amber-400 mb-2">Value Weights W_V [4x4]</div>
+                            ${renderMatrixTable(currentData.W_V, ['d0','d1','d2','d3'], ['k0','k1','k2','k3'], 'Dim')}
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        // Auto-run on load for immediate interactive demonstration
+        window.addEventListener('DOMContentLoaded', () => {
+            processText();
+        });
+    </script>
+</body>
+</html>
